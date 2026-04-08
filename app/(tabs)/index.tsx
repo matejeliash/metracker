@@ -1,98 +1,142 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useEffect, useState } from "react";
+import { Alert, FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { TaskItem } from "../components/TaskItem";
+import { TaskModal } from "../components/TaskModal";
+import { TaskProgress } from "../components/TaskProgress";
+import { createTable, deleteTask, getTodayTasks, insertTask, maybeCopyTasksFromLastDate, Task, updateTaskTitle } from "../db/db";
+import { useTheme } from "../styles";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function Index() {
 
-export default function HomeScreen() {
+
+  const {
+    backgroundColor,
+    textColor,
+    styles
+  } = useTheme();
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskTitle, setTaskTitle] = useState<string>("");
+  const [selectedTask, setSelectedTask] = useState<Task>();
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+
+  // create tasks table, copy tasks from last used date if date exists
+  const loadTasks = async () => {
+    try {
+      await createTable();
+      await maybeCopyTasksFromLastDate();
+      const data = await getTodayTasks();
+      setTasks(data);
+
+    } catch (err: any) {
+      console.log(err)
+    }
+  }
+
+  // do on screen load
+  useEffect(() => {
+    try {
+      loadTasks()
+    } catch (err: any) {
+      Alert.alert(err.message)
+    }
+
+
+  }, []);
+
+
+  const storeTask = async () => {
+    const trimmedTitle = taskTitle.trim()
+
+    // do not allow empty / only whitespace titles
+    if (trimmedTitle === "") {
+      Alert.alert("Empty task title", "Task title cannot be empty.")
+      return;
+    }
+    // save tasks and retrieve todays tasks
+    insertTask(taskTitle);
+    const gotTasks = await getTodayTasks();
+    setTasks(gotTasks);
+    setTaskTitle(""); // clean input field
+  }
+
+
+  // select task and show modal
+  const afterTaskPress = (task: Task) => {
+    setSelectedTask(task);
+    setIsModalVisible(true);
+
+
+  }
+
+  const closeModal = () => {
+    setIsModalVisible(false);
+  }
+
+
+
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={{ flex: 1, backgroundColor: backgroundColor }}>
+      <View style={styles.container}
+      >
+        <TextInput style={styles.taskInput}
+          value={taskTitle}
+          onChangeText={setTaskTitle}
+          placeholder="Type task title here ..."
+          placeholderTextColor={textColor}
+        >
+        </TextInput>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+
+
+        <Pressable style={styles.button} onPress={storeTask}>
+
+          <Ionicons name={'add-outline'} color={textColor} size={28} />
+          <Text style={styles.text} >{"Add task"}</Text>
+        </Pressable>
+
+        <Text style={styles.h2}>Tasks:</Text>
+
+        <TaskProgress tasks={tasks}></TaskProgress>
+
+        {/* use margin so tasks are not covered by tabs */}
+        <FlatList style={{ marginBottom: 170 }}
+          data={tasks}
+          keyExtractor={item => item.id.toString()}
+          renderItem={({ item }) => {
+
+            return <Pressable style={styles.taskContainer} onPress={() => afterTaskPress(item)}>
+              <TaskItem task={item} reload={loadTasks}>
+
+              </TaskItem>
+
+            </Pressable>
+          }}
+        >
+
+        </FlatList>
+
+        {/* only show modal when task is selected */}
+        {selectedTask &&
+          <TaskModal
+            task={selectedTask}
+            isVisible={isModalVisible}
+            onClose={closeModal}
+            onSave={updateTaskTitle}
+            onDelete={deleteTask}
+            loadTasks={loadTasks}
+          >
+
+          </TaskModal>}
+
+
+
+
+
+      </View>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
